@@ -322,6 +322,93 @@ Add a GitHub **ruleset** on the tag pattern `deploy/**` that forbids deletion. T
 then becomes provably append-only: a version can never be silently freed and reissued to a
 different binary. Leave `deploy-next/**` unprotected.
 
+Without it, the boundary is guarded by attention alone — and the two deletions sit one
+character apart. Removing a *superseded* `deploy-next/*` tag is a harmless no-op; removing
+a `deploy/*` tag frees a number that a shipped binary already claims, so the next deploy
+mints a second, different image with the same name.
+
+### Migrating a project that already has the old scaffolding
+
+If the project carries a local `cmake/versioning/` directory and a
+`next_deploy_version.txt`, this replaces both. Work on a branch.
+
+**1. Survey first.** Record what you must preserve:
+
+```sh
+grep -in "add_deploy_target_for" CMakeLists.txt     # -i matters, see below
+find . -name next_deploy_version.txt -not -path "./.git/*"
+ls images/*/ | tail                                  # the high-water mark
+git config -f .gitmodules --get-regexp path          # other submodules
+```
+
+> **Match the macro case-insensitively.** Projects call it both as
+> `ADD_DEPLOY_TARGET_FOR` and `add_deploy_target_for` — CMake commands are
+> case-insensitive, so both work. A case-sensitive search will report projects as "not
+> deploying" while deployed images sit in their `images/` directory.
+
+**2. Swap the directory for the submodule** — see [Adding the submodule](#adding-the-submodule).
+Mount it at `cmake/versioning`, the same path, and `CMakeLists.txt` needs no edits at all.
+
+**3. Adapt the project's deploy script.** This is the only file that genuinely differs
+between projects — checksum tooling and toolchain paths vary. The versioning portion is
+always the same three changes:
+
+```diff
+-VERSION_FILE=$4
+-next_minor=$(cut -d ';' -f 2 < "$VERSION_FILE")
+-deployed_minor=$((next_minor - 1))
+-version_formatted=$(printf "%05d" "$deployed_minor")
++STATE_FILE=$4
++. "$STATE_FILE"
++version_formatted=$MINOR
+```
+
+plus the `dirty/` and `override/` subfolder branches from
+[What the project's deploy script must do](#what-the-projects-deploy-script-must-do).
+
+**4. Confirm the build directory is gitignored.** The state file is written there, and an
+untracked file inside the repository makes every deploy fail the clean-tree check. Build
+directories are named inconsistently across projects — `BUILD/`, `cmake-build-debug/`,
+`<project>_cmake/build/`:
+
+```sh
+git check-ignore -v <builddir>/next_deploy_version.txt
+```
+
+**5. Seed the counter** at the value the old file held, or one past the highest image:
+
+```sh
+./cmake/versioning/set_next_deploy_version.sh 1.128
+```
+
+Read the old file carefully — `1;128` means the *next* version is 128, not 129. And check
+the major: not every project is on 1.
+
+**6. Verify, in this order**, before deploying for real:
+
+```sh
+cmake --preset <configure-preset>                       # must need no CMakeLists edits
+cmake --build <dir> --target deploy_version_list        # reads the counter
+cmake --build <dir> --target versioned_<proj>  # twice: version must not advance
+DEPLOY_VERSION_ALLOW_DIRTY=1 cmake --build <dir> --target deploy_<versioned target>
+strings images/*/dirty/*.bin | grep VER=                # format unchanged?
+```
+
+Only then deploy for real, on a clean tree with HEAD pushed.
+
+**7. Merging.** Once the submodule is in place, `git switch` between a branch that has it
+and one that still tracks `cmake/versioning/*` as files **fails** — one path cannot be both
+a gitlink and a tree. To squash-merge without fighting it, build the commit directly:
+
+```sh
+GIT_INDEX_FILE=/tmp/sq git read-tree <branch>
+GIT_INDEX_FILE=/tmp/sq git write-tree                  # -> TREE
+git commit-tree TREE -p main -m "..."                  # -> COMMIT
+git branch -f main COMMIT
+```
+
+No checkout, no `submodule deinit`, no working-tree churn.
+
 ---
 
 ## C. Escape hatches
