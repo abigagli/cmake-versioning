@@ -1,0 +1,8 @@
+char const*
+deploy_version()
+{
+    // The '@(#)' sequence makes the string inspectable with the "what" command.
+    // DEPLOYED_VERSION is the unpadded rendering (1.129) plus any escape-hatch
+    // suffix ('-dirty', '-x'); see deploy_version.sh.
+    return &"@(#)VER=${DEPLOYED_VERSION}"[4];
+}

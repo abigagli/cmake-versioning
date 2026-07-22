@@ -1,0 +1,3 @@
+# The project list names private repositories; this repo is public.
+# It lives in ~/.config/deploy-versions/projects.txt by default.
+projects.txt

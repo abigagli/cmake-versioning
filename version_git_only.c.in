@@ -1,0 +1,13 @@
+char const*
+git_sha()
+{
+  // Use the special '@(#)' sequence to make the following string
+  // inspectable through the "what" command
+  return &"@(#)GIT_SHA=${CURRENT_GIT_DESCRIBE}"[4];
+}
+
+__attribute__((weak)) char const*
+deploy_version()
+{
+  return &"@(#)VER=NOT_DEPLOYED"[4];
+}
