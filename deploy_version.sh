@@ -345,8 +345,21 @@ cmd_list() {
         printf 'deployed (%s/): none\n' "$NS_DEPLOY"
     fi
     if [ -n "$chosen" ]; then
+        # deploy-next tags are append-only, so old ones stay visible forever.
+        # Only the highest can matter, and only while deploys have not overtaken
+        # it - mark which, so the others do not read as still active.
+        local from_deployed highest v
+        from_deployed=$(($(printf '%s\n' "$deployed" | sed '/^$/d' | max_minor) + 1))
+        highest=$(printf '%s\n' "$chosen" | tail -1)
+
         printf '\nrequested (%s/):\n' "$NS_NEXT"
-        printf '%s\n' "$chosen" | sed 's/^/  /'
+        for v in $chosen; do
+            if [ "$v" = "$highest" ] && [ "$(minor_of "$v")" -ge "$from_deployed" ]; then
+                printf '  %-14s <- in effect\n' "$v"
+            else
+                printf '  %-14s    superseded\n' "$v"
+            fi
+        done
     fi
 }
 
